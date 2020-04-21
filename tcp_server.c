@@ -2,16 +2,29 @@
 	> File Name: tcp_server.c
 	> Author: moyu
 	> Mail: 
-	> Created Time: 2020年04月20日 星期一 17时09分34秒
+	> Created Time: 2020年04月21日 星期二 20时54分59秒
  ************************************************************************/
 
-#include "tcp_header.h"
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <pthread.h>
+
+#define SERVER_IP "192.168.17.129"
+#define SERVER_PORT 6666
+
+
+void server_func(void* cfd);
+
 
 int main()
 {
-    int sfd;    //套接字
+    int sfd;
 
-    
     //创建套接字
     if ((sfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
@@ -19,26 +32,21 @@ int main()
         return -1;
     }
 
-    //创建结构体类型，并清空
+
+    //初始化结构体
     struct sockaddr_in myaddr;
     memset(&myaddr, 0, sizeof(myaddr));
-    
-    
-    //填充结构体信息
-    myaddr.sin_family = PF_INET;    //地址族
-    myaddr.sin_port = htons(SERVER_PORT);  //端口
-#if 1
-    myaddr.sin_addr.s_addr = inet_addr(SERVER_IPADDR);   //IP地址
-#else
-    //使用inet_pton来转换IP地址
-    if ((inet_pton(AF_INET, SERVER_IPADDR, (void*)&myaddr.sin_addr.s_addr)) != 1)
-    {
-        perror("inet_pton");
-        return -1;
-    }
-#endif
 
-    
+    myaddr.sin_family = AF_INET;
+    myaddr.sin_port = htons(SERVER_PORT);
+    myaddr.sin_addr.s_addr = inet_addr(SERVER_IP);
+
+
+    //允许地址重用
+    int REUSE = 1;
+    setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &REUSE,sizeof(REUSE));
+
+
     //绑定本机地址和端口
     if (bind(sfd, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0)
     {
@@ -46,42 +54,95 @@ int main()
         return -1;
     }
 
-    
-    //设置监听套接字，同时允许最大2*BACKLOG+1 = 11个客户端或者服务器连接
-    if (listen(sfd, BACKLOG) < 0)
+
+    //转换监听套接字
+    if (listen(sfd, 5) < 0)
     {
         perror("listen");
         return -1;
     }
 
 
-    //服务器接受连接请求，返回通信文件描述符
-    int connect_fd;
-    if ((connect_fd = accept(sfd, NULL, NULL)) < 0)
+    //接受连接请求
+    int cfd;
+
+    #if 0
+
+    if ((cfd = accept(sfd, NULL, NULL)) < 0)
     {
         perror("accept");
         return -1;
     }
+    
+    printf("Server standing...\n");
 
-
-    //循环读取数据
+    
+    //读取数据
+    
     while (1)
     {
-        char buf[BUFSIZE];
-        int ret;
+        char buf[64];
 
-        //读取数据
-        if ((ret = read(connect_fd, buf, BUFSIZE)) > 0)
-        {
-            if (strncmp(buf, "quit\n", 4) != 0)
-                //打印收到的数据
-                printf("Recv > %s", buf);
-            else
-                break;
-        }
+        read(cfd, buf, sizeof(buf));
+
+        if (strcmp(buf, "quit\n") == 0)
+            break;
+        else
+            printf("recv > %s", buf);
     }
 
-    //关闭文件描述符
+
+    //关闭套接字
+    close(cfd);
+
+    #endif
+
+    //多线程实现并发
+    pthread_t tid;
+
+    while (1)
+    {
+        //接受连接请求
+        if ((cfd = accept(sfd, NULL, NULL)) < 0)
+        {
+            perror("accept");
+            return -1;
+        }
+
+        printf("Server standing...\n");
+
+        //创建线程
+        pthread_create(&tid, NULL, (void*)&server_func, (void*)&cfd);
+    }
+   
+    //关闭套接字
     close(sfd);
-    close(connect_fd);
+}
+
+void server_func(void* cfd)
+{
+    int newfd = *(int*)cfd;
+
+    printf("newfd = %d\n", newfd);
+
+
+    //读取数据
+    while (1)
+    {
+        char buf[64];
+
+        read(newfd, buf, sizeof(buf));
+
+        if (strcmp(buf, "quit\n") == 0)
+        {
+            printf("Client(fd = %d) is exit\n", newfd);
+            break;
+        } 
+        else
+            printf("recv > %s", buf);
+    }
+
+
+    //关闭套接字
+    close(newfd);
 }

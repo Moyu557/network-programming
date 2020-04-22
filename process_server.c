@@ -13,17 +13,31 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <signal.h>
+#include <sys/wait.h>
 
-#define SERVER_IP "192.168.17.129"
+#define SERVER_IP "192.168.17.133"
 #define SERVER_PORT 6666
 
 
-void server_func(void* cfd);
+void server_func(void* cfd);	//线程处理函数
+
+//等待子进程结束
+void sig_child_handle(int signo)
+{
+	if (SIGCHLD == signo)
+	{
+		waitpid(-1, NULL, WNOHANG);	//非阻塞
+	}
+}
 
 
 int main()
 {
     int sfd;
+
+	signal(SIGCHLD, sig_child_handle);
+
 
     //创建套接字
     if ((sfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
@@ -42,11 +56,6 @@ int main()
     myaddr.sin_addr.s_addr = inet_addr(SERVER_IP);
 
 
-    //允许地址重用
-    int REUSE = 1;
-    setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &REUSE,sizeof(REUSE));
-
-
     //绑定本机地址和端口
     if (bind(sfd, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0)
     {
@@ -61,6 +70,7 @@ int main()
         perror("listen");
         return -1;
     }
+	printf("listenning...\n");
 
 
     //接受连接请求
@@ -148,6 +158,7 @@ int main()
                 } 
                 else
                 printf("recv > %s", buf);
+
             }
 
             close(cfd);
